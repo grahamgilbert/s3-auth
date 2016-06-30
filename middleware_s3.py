@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Generate AWS4 authentication headers for your protected files
+Generate AWS4 authentication  or querystrings for your protected files
 
 This module is meant to plug into munki.
 https://github.com/munki/munki/wiki
@@ -28,12 +28,15 @@ def pref(pref_name):
     """Return a preference. See munkicommon.py for details
     """
     pref_value = CFPreferencesCopyAppValue(pref_name, BUNDLE_ID)
+    if pref_name == 'Method' and pref_value == None:
+        pref_value = 'Header'
     return pref_value
 
 
 ACCESS_KEY = pref('AccessKey')
 SECRET_KEY = pref('SecretKey')
 REGION = pref('Region')
+METHOD = pref('Method')
 
 
 def sign(key, msg):
@@ -57,8 +60,7 @@ def host_from_url(url):
     parse = urlparse(url)
     return parse.hostname
 
-
-def s3_auth_headers(url):
+def s3_auth_headers_and_url(url, method):
     """
     Returns a dict that contains all the required header information.
     Each header is unique to the url requested.
@@ -103,13 +105,34 @@ def s3_auth_headers(url):
     headers = {'x-amz-date': amzdate,
                'x-amz-content-sha256': payload_hash,
                'Authorization': authorization_header}
-    return headers
+    if method.lower() == 'querystring':
+        print authorization_header
+        url = ("{}?X-Amz-Algorithm={}&X-Amz-Credential={}/{}/{}/{}/aws4_request"
+                        "&X-Amz-Date={}&X-Amz-Expires=86400&X-Amz-SignedHeaders={}"
+                        "&X-Amz-Signature={}").format(url,
+                                                    algorithm,
+                                                    ACCESS_KEY,
+                                                    datestamp,
+                                                    REGION,
+                                                    SERVICE,
+                                                    amzdate,
+                                                    signed_headers,
+                                                    signature)
+        headers = {'x-amz-date': amzdate,
+               'x-amz-content-sha256': payload_hash}
+    else:
+        headers = {'x-amz-date': amzdate,
+               'x-amz-content-sha256': payload_hash,
+               'Authorization': authorization_header}
+    return headers, url
 
 
 def process_request_options(options):
     """Make changes to options dict and return it.
        This is the fuction that munki calls."""
-    if 's3.amazonaws.com' in options['url']:
-        headers = s3_auth_headers(options['url'])
+    print options
+    if 's3.amazonaws.com' in options['url'] or 'cloudfront.net' in options['url']:
+        (headers, url) = s3_auth_headers_and_url(options['url'], METHOD)
         options['additional_headers'].update(headers)
+        options['url'] = url
     return options
