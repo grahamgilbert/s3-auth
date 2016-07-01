@@ -13,6 +13,7 @@ import datetime
 import hashlib
 import hmac
 from urlparse import urlparse
+import urllib
 
 # pylint: disable=E0611
 from Foundation import CFPreferencesCopyAppValue
@@ -73,8 +74,12 @@ def s3_auth_headers_and_url(url, method):
     host = host_from_url(url)
     canonical_uri = uri
     canonical_querystring = ''
-    canonical_headers = 'host:{}\nx-amz-date:{}\n'.format(host, amzdate)
-    signed_headers = 'host;x-amz-date'
+    if method.lower() == 'querystring':
+        canonical_headers = 'host:{}\n'.format(host)
+        signed_headers = 'host'
+    else:
+        canonical_headers = 'host:{}\nx-amz-date:{}\n'.format(host, amzdate)
+        signed_headers = 'host;x-amz-date'
     payload_hash = hashlib.sha256('').hexdigest()
     canonical_request = '{}\n{}\n{}\n{}\n{}\n{}'.format(METHOD,
                                                         canonical_uri,
@@ -102,24 +107,24 @@ def s3_auth_headers_and_url(url, method):
                                                                       signed_headers,
                                                                       signature)
 
-    headers = {'x-amz-date': amzdate,
-               'x-amz-content-sha256': payload_hash,
-               'Authorization': authorization_header}
+    # headers = {'x-amz-date': amzdate,
+    #            'x-amz-content-sha256': payload_hash,
+    #            'Authorization': authorization_header}
     if method.lower() == 'querystring':
         print authorization_header
-        url = ("{}?X-Amz-Algorithm={}&X-Amz-Credential={}/{}/{}/{}/aws4_request"
+        credential_string = ("{}/{}/{}/{}/aws4_request").format(ACCESS_KEY,
+                                                    datestamp,
+                                                    REGION,
+                                                    SERVICE,)
+        url = ("{}?X-Amz-Algorithm={}&X-Amz-Credential={}"
                         "&X-Amz-Date={}&X-Amz-Expires=86400&X-Amz-SignedHeaders={}"
                         "&X-Amz-Signature={}").format(url,
                                                     algorithm,
-                                                    ACCESS_KEY,
-                                                    datestamp,
-                                                    REGION,
-                                                    SERVICE,
+                                                    urllib.quote_plus(credential_string),
                                                     amzdate,
                                                     signed_headers,
                                                     signature)
-        headers = {'x-amz-date': amzdate,
-               'x-amz-content-sha256': payload_hash}
+        headers = {}
     else:
         headers = {'x-amz-date': amzdate,
                'x-amz-content-sha256': payload_hash,
